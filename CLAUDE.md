@@ -9,6 +9,7 @@
 - **Runtime**: Node.js 18+
 - **Language**: TypeScript (strict mode)
 - **Slack SDK**: `@slack/bolt` v4 with `ExpressReceiver` (HTTP mode)
+- **AI**: `@anthropic-ai/sdk` (Claude API for incident interpretation)
 - **Env config**: `dotenv`
 - **Package Manager**: npm
 - **Linting**: ESLint with `@typescript-eslint`
@@ -28,7 +29,8 @@ incident-slack-bot/
 │   │   │   └── app-mention.ts         # Responds to @mentions
 │   │   ├── actions/                    # Interactive component handlers (empty, for future use)
 │   │   └── shortcuts/                  # Shortcut handlers (empty, for future use)
-│   ├── services/                       # Business logic (empty, for future use)
+│   ├── services/
+│   │   └── claude.ts                  # Claude API — interprets incident messages
 │   ├── models/                         # Data models (empty, for future use)
 │   ├── utils/                          # Shared utilities (empty, for future use)
 │   └── types/                          # TypeScript type definitions (empty, for future use)
@@ -77,6 +79,7 @@ Defined in `.env` (see `.env.example`):
 | ---------------------- | ------------------------------------ |
 | `SLACK_BOT_TOKEN`      | Bot user OAuth token (`xoxb-...`)    |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret             |
+| `ANTHROPIC_API_KEY`    | Anthropic API key (`sk-ant-...`)     |
 | `PORT`                 | Server port (default: `3000`)        |
 
 ## Architecture
@@ -102,6 +105,20 @@ To add a new listener:
 ### Service Layer
 
 Business logic goes in `src/services/`, separate from Slack handler code. Handlers should be thin — call `ack()` (for interactive payloads), delegate to a service, and reply.
+
+#### Claude Service (`src/services/claude.ts`)
+
+`interpretIncidentMessage(text)` sends a Slack message to Claude and returns structured data:
+
+```ts
+type IncidentInterpretation = {
+  incident_title: string;           // Short title (≤10 words)
+  status: "investigating" | "resolved";
+  summary: string;                  // One-sentence timeline entry
+};
+```
+
+Throws `ClaudeParseError` (with `rawResponse` property) if Claude returns invalid JSON or a mismatched schema.
 
 ## Coding Conventions
 
