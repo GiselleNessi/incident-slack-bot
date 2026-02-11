@@ -83,6 +83,7 @@ Defined in `.env` (see `.env.example`):
 | `SLACK_SIGNING_SECRET` | Slack app signing secret             |
 | `ANTHROPIC_API_KEY`    | Anthropic API key (`sk-ant-...`)     |
 | `BETTERSTACK_API_KEY`  | Better Stack Uptime API token        |
+| `BETTERSTACK_STATUS_PAGE_ID` | Status page ID for public reports |
 | `PORT`                 | Server port (default: `3000`)        |
 
 ## Architecture
@@ -130,8 +131,10 @@ Manages incidents in Better Stack Uptime via REST API:
 - `findOrCreateIncident(title, summary)` — searches open incidents, creates one if no match found
 - `updateIncidentStatus(id, status)` — resolves an incident (investigating is the default state)
 - `postIncidentUpdate(id, message)` — posts a comment on the incident timeline
+- `findOrCreateStatusReport(title, message, status)` — finds or creates a status page report (public-facing)
+- `postStatusPageUpdate(reportId, message, status)` — posts a follow-up update on an existing report
 
-Uses v3 API for incident CRUD and v2 API for comments. Auth via `BETTERSTACK_API_KEY` Bearer token.
+Uses v3 API for incident CRUD and v2 API for comments + status page reports. Auth via `BETTERSTACK_API_KEY` Bearer token. Status page integration is optional — only active when `BETTERSTACK_STATUS_PAGE_ID` is set.
 
 ## Coding Conventions
 

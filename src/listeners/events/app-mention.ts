@@ -2,7 +2,9 @@ import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { interpretIncidentMessage } from "../../services/claude";
 import {
   findOrCreateIncident,
+  findOrCreateStatusReport,
   postIncidentUpdate,
+  postStatusPageUpdate,
   updateIncidentStatus,
 } from "../../services/betterstack";
 
@@ -22,6 +24,23 @@ export async function appMention({
 
     await postIncidentUpdate(incident.id, interpretation.summary);
     await updateIncidentStatus(incident.id, interpretation.status);
+
+    // Update the public status page if configured
+    if (process.env.BETTERSTACK_STATUS_PAGE_ID) {
+      const { report, created } = await findOrCreateStatusReport(
+        interpretation.incident_title,
+        interpretation.summary,
+        interpretation.status,
+      );
+
+      if (!created) {
+        await postStatusPageUpdate(
+          report.id,
+          interpretation.summary,
+          interpretation.status,
+        );
+      }
+    }
 
     await say({
       text: [
