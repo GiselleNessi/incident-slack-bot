@@ -10,6 +10,7 @@
 - **Language**: TypeScript (strict mode)
 - **Slack SDK**: `@slack/bolt` v4 with `ExpressReceiver` (HTTP mode)
 - **AI**: `@anthropic-ai/sdk` (Claude API for incident interpretation)
+- **Incident tracking**: Better Stack Uptime API via `axios`
 - **Env config**: `dotenv`
 - **Package Manager**: npm
 - **Linting**: ESLint with `@typescript-eslint`
@@ -30,7 +31,8 @@ incident-slack-bot/
 │   │   ├── actions/                    # Interactive component handlers (empty, for future use)
 │   │   └── shortcuts/                  # Shortcut handlers (empty, for future use)
 │   ├── services/
-│   │   └── claude.ts                  # Claude API — interprets incident messages
+│   │   ├── claude.ts                  # Claude API — interprets incident messages
+│   │   └── betterstack.ts            # Better Stack API — incident CRUD + comments
 │   ├── models/                         # Data models (empty, for future use)
 │   ├── utils/                          # Shared utilities (empty, for future use)
 │   └── types/                          # TypeScript type definitions (empty, for future use)
@@ -80,6 +82,7 @@ Defined in `.env` (see `.env.example`):
 | `SLACK_BOT_TOKEN`      | Bot user OAuth token (`xoxb-...`)    |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret             |
 | `ANTHROPIC_API_KEY`    | Anthropic API key (`sk-ant-...`)     |
+| `BETTERSTACK_API_KEY`  | Better Stack Uptime API token        |
 | `PORT`                 | Server port (default: `3000`)        |
 
 ## Architecture
@@ -119,6 +122,16 @@ type IncidentInterpretation = {
 ```
 
 Throws `ClaudeParseError` (with `rawResponse` property) if Claude returns invalid JSON or a mismatched schema.
+
+#### Better Stack Service (`src/services/betterstack.ts`)
+
+Manages incidents in Better Stack Uptime via REST API:
+
+- `findOrCreateIncident(title, summary)` — searches open incidents, creates one if no match found
+- `updateIncidentStatus(id, status)` — resolves an incident (investigating is the default state)
+- `postIncidentUpdate(id, message)` — posts a comment on the incident timeline
+
+Uses v3 API for incident CRUD and v2 API for comments. Auth via `BETTERSTACK_API_KEY` Bearer token.
 
 ## Coding Conventions
 
