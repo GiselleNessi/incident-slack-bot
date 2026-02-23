@@ -35,7 +35,10 @@ export async function interpretIncidentMessage(
     throw new ClaudeParseError("Claude returned no text content", "");
   }
 
-  const raw = contentBlock.text.trim();
+  const raw = contentBlock.text
+    .trim()
+    .replace(/^```(?:json)?\s*\n?/, "")
+    .replace(/\n?```\s*$/, "");
 
   let parsed: unknown;
   try {
