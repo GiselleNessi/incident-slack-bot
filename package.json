@@ -16,6 +16,9 @@
     "bot"
   ],
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
     "@slack/bolt": "^4.1.0",
