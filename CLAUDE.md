@@ -83,6 +83,7 @@ Defined in `.env` (see `.env.example`):
 | `SLACK_SIGNING_SECRET` | Slack app signing secret             |
 | `ANTHROPIC_API_KEY`    | Anthropic API key (`sk-ant-...`)     |
 | `BETTERSTACK_API_KEY`  | Better Stack Uptime API token        |
+| `BETTERSTACK_REQUESTER_EMAIL` | Email for incident creation (required by API) |
 | `BETTERSTACK_STATUS_PAGE_ID` | Status page ID for public reports |
 | `PORT`                 | Server port (default: `3000`)        |
 

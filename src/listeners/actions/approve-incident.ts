@@ -1,4 +1,5 @@
 import type { AllMiddlewareArgs, SlackActionMiddlewareArgs } from "@slack/bolt";
+import type { AxiosError } from "axios";
 import type { IncidentInterpretation } from "../../services/claude";
 import {
   findOrCreateIncident,
@@ -53,7 +54,16 @@ export async function approveIncident({
       ].join("\n"),
     });
   } catch (error) {
-    console.error("[approve-incident] Error creating incident:", error);
+    const axiosError = error as AxiosError;
+    if (axiosError.response) {
+      console.error(
+        "[approve-incident] API error:",
+        axiosError.response.status,
+        JSON.stringify(axiosError.response.data),
+      );
+    } else {
+      console.error("[approve-incident] Error creating incident:", error);
+    }
     await respond({
       replace_original: false,
       text: "\u274c Failed to create/update incident in Better Stack",

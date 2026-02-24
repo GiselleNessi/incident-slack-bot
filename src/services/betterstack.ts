@@ -75,8 +75,17 @@ export async function findOrCreateIncident(
     }
   }
 
+  const requesterEmail = process.env.BETTERSTACK_REQUESTER_EMAIL;
+  if (!requesterEmail) {
+    throw new Error(
+      "BETTERSTACK_REQUESTER_EMAIL environment variable is not set",
+    );
+  }
+
   const createResponse = await client.post("/incidents", {
-    summary: title,
+    requester_email: requesterEmail,
+    name: title,
+    summary,
     description: summary,
   });
 
