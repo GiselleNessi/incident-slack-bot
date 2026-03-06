@@ -1,86 +1,203 @@
 import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
-import { interpretIncidentMessage } from "../../services/claude";
+import type { WebClient } from "@slack/web-api";
+import {
+  interpretIncidentMessage,
+  summarizeThread,
+} from "../../services/claude";
 import { fetchThreadMessages } from "../../utils/thread";
+
+type SayFn = AllMiddlewareArgs &
+  SlackEventMiddlewareArgs<"app_mention"> extends { say: infer S } ? S : never;
+
+/**
+ * Parses the first word after the bot mention as a command.
+ * Returns the command and the remaining text.
+ */
+function parseCommand(text: string): { command: string; rest: string } {
+  const cleaned = text.replace(/<@[A-Z0-9]+>/g, "").trim();
+  const spaceIdx = cleaned.indexOf(" ");
+  if (spaceIdx === -1) {
+    return { command: cleaned.toLowerCase(), rest: "" };
+  }
+  return {
+    command: cleaned.slice(0, spaceIdx).toLowerCase(),
+    rest: cleaned.slice(spaceIdx + 1).trim(),
+  };
+}
 
 export async function appMention({
   event,
   client,
   say,
 }: AllMiddlewareArgs & SlackEventMiddlewareArgs<"app_mention">): Promise<void> {
-  // Determine thread root: if the mention is inside a thread use that,
-  // otherwise the mention message itself becomes the thread root.
   const threadTs = event.thread_ts ?? event.ts;
+  const { command } = parseCommand(event.text ?? "");
 
   try {
-    // Fetch all thread messages for context
-    const threadMessages = await fetchThreadMessages(
-      client,
-      event.channel,
-      threadTs,
-    );
-
-    const mentionText = (event.text ?? "")
-      .replace(/<@[A-Z0-9]+>/g, "")
-      .trim();
-
-    const interpretation = await interpretIncidentMessage(
-      mentionText,
-      threadMessages.length > 0 ? threadMessages : undefined,
-    );
-
-    // If chains aren't confidently detected, ask the thread first
-    if (!interpretation.chains_confident) {
-      await say({
-        thread_ts: threadTs,
-        text: [
-          "⚠️ I couldn't confidently detect which chains are affected from this thread.",
-          "Could someone reply with the affected chains so I can include them in the status update?",
-          "",
-          "_In the meantime, here's what I've drafted:_",
-          "",
-          `📝 *Incident Draft — Please Review*`,
-          `*Title:* ${interpretation.incident_title}`,
-          `*Status:* ${interpretation.status}`,
-          `*Summary:* ${interpretation.summary}`,
-          `*Affected Chains:* ${interpretation.affected_chains.length > 0 ? interpretation.affected_chains.join(", ") : "Unknown — please specify"}`,
-        ].join("\n"),
-        blocks: [
-          {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: [
-                "⚠️ I couldn't confidently detect which chains are affected from this thread.",
-                "Could someone reply with the affected chains so I can include them in the status update?",
-              ].join("\n"),
-            },
-          },
-          { type: "divider" },
-          ...buildDraftBlocks(interpretation),
-        ],
-      });
-      return;
+    switch (command) {
+      case "summarize":
+        await handleSummarize(client, say, event.channel, threadTs);
+        return;
+      case "update":
+        await handleUpdate(client, say, event.channel, threadTs);
+        return;
+      default:
+        await handleIncidentDraft(client, say, event.channel, threadTs, event.text ?? "");
+        return;
     }
-
-    await say({
-      thread_ts: threadTs,
-      text: [
-        `📝 *Incident Draft — Please Review*`,
-        `*Title:* ${interpretation.incident_title}`,
-        `*Status:* ${interpretation.status}`,
-        `*Summary:* ${interpretation.summary}`,
-        `*Affected Chains:* ${interpretation.affected_chains.join(", ") || "None detected"}`,
-      ].join("\n"),
-      blocks: buildDraftBlocks(interpretation),
-    });
   } catch (error) {
-    console.error("[app-mention] Error processing incident:", error);
+    console.error(`[app-mention] Error handling "${command}":`, error);
     await say({
-      text: "❌ Failed to interpret incident message",
+      text: `\u274c Failed to process \`${command || "incident"}\` command`,
       thread_ts: threadTs,
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Command: summarize
+// ---------------------------------------------------------------------------
+
+async function handleSummarize(
+  webClient: WebClient,
+  say: SayFn,
+  channel: string,
+  threadTs: string,
+): Promise<void> {
+  const threadMessages = await fetchThreadMessages(webClient, channel, threadTs);
+
+  if (threadMessages.length === 0) {
+    await say({
+      thread_ts: threadTs,
+      text: "\u26a0\ufe0f No thread messages found to summarize. Tag me inside an incident thread.",
+    });
+    return;
+  }
+
+  const summary = await summarizeThread(threadMessages);
+
+  const timelineText = summary.timeline
+    .map((item) => `\u2022 ${item}`)
+    .join("\n");
+
+  await say({
+    thread_ts: threadTs,
+    text: [
+      "\ud83d\udccb *Thread Summary*",
+      `*Title:* ${summary.title}`,
+      `*Current Status:* ${summary.status}`,
+      `*Affected Chains:* ${summary.affected_chains.join(", ") || "None detected"}`,
+      "",
+      "*Timeline:*",
+      timelineText,
+    ].join("\n"),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Command: update
+// ---------------------------------------------------------------------------
+
+async function handleUpdate(
+  webClient: WebClient,
+  say: SayFn,
+  channel: string,
+  threadTs: string,
+): Promise<void> {
+  const threadMessages = await fetchThreadMessages(webClient, channel, threadTs);
+
+  if (threadMessages.length === 0) {
+    await say({
+      thread_ts: threadTs,
+      text: "\u26a0\ufe0f No thread messages found. Tag me inside an incident thread to generate an update.",
+    });
+    return;
+  }
+
+  const interpretation = await interpretIncidentMessage("", threadMessages);
+
+  await say({
+    thread_ts: threadTs,
+    text: [
+      "\ud83d\udcdd *Incident Update Draft — Please Review*",
+      `*Title:* ${interpretation.incident_title}`,
+      `*Status:* ${interpretation.status}`,
+      `*Summary:* ${interpretation.summary}`,
+      `*Affected Chains:* ${interpretation.affected_chains.join(", ") || "None detected"}`,
+    ].join("\n"),
+    blocks: buildDraftBlocks(interpretation),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Default: incident draft (original behavior)
+// ---------------------------------------------------------------------------
+
+async function handleIncidentDraft(
+  webClient: WebClient,
+  say: SayFn,
+  channel: string,
+  threadTs: string,
+  rawText: string,
+): Promise<void> {
+  const threadMessages = await fetchThreadMessages(webClient, channel, threadTs);
+
+  const mentionText = rawText.replace(/<@[A-Z0-9]+>/g, "").trim();
+
+  const interpretation = await interpretIncidentMessage(
+    mentionText,
+    threadMessages.length > 0 ? threadMessages : undefined,
+  );
+
+  if (!interpretation.chains_confident) {
+    await say({
+      thread_ts: threadTs,
+      text: [
+        "\u26a0\ufe0f I couldn't confidently detect which chains are affected from this thread.",
+        "Could someone reply with the affected chains so I can include them in the status update?",
+        "",
+        "_In the meantime, here\u2019s what I\u2019ve drafted:_",
+        "",
+        `\ud83d\udcdd *Incident Draft \u2014 Please Review*`,
+        `*Title:* ${interpretation.incident_title}`,
+        `*Status:* ${interpretation.status}`,
+        `*Summary:* ${interpretation.summary}`,
+        `*Affected Chains:* ${interpretation.affected_chains.length > 0 ? interpretation.affected_chains.join(", ") : "Unknown \u2014 please specify"}`,
+      ].join("\n"),
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: [
+              "\u26a0\ufe0f I couldn't confidently detect which chains are affected from this thread.",
+              "Could someone reply with the affected chains so I can include them in the status update?",
+            ].join("\n"),
+          },
+        },
+        { type: "divider" },
+        ...buildDraftBlocks(interpretation),
+      ],
+    });
+    return;
+  }
+
+  await say({
+    thread_ts: threadTs,
+    text: [
+      `\ud83d\udcdd *Incident Draft \u2014 Please Review*`,
+      `*Title:* ${interpretation.incident_title}`,
+      `*Status:* ${interpretation.status}`,
+      `*Summary:* ${interpretation.summary}`,
+      `*Affected Chains:* ${interpretation.affected_chains.join(", ") || "None detected"}`,
+    ].join("\n"),
+    blocks: buildDraftBlocks(interpretation),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Shared block builder
+// ---------------------------------------------------------------------------
 
 function buildDraftBlocks(interpretation: {
   incident_title: string;
@@ -94,7 +211,7 @@ function buildDraftBlocks(interpretation: {
       text: {
         type: "mrkdwn" as const,
         text: [
-          `📝 *Incident Draft — Please Review*`,
+          `\ud83d\udcdd *Incident Draft \u2014 Please Review*`,
           `*Title:* ${interpretation.incident_title}`,
           `*Status:* ${interpretation.status}`,
           `*Summary:* ${interpretation.summary}`,

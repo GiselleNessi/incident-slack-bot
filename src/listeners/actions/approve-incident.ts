@@ -4,6 +4,7 @@ import type { IncidentInterpretation } from "../../services/claude";
 import {
   findOrCreateIncident,
   findOrCreateStatusReport,
+  getStatusPageUrl,
   postIncidentUpdate,
   postStatusPageUpdate,
   updateIncidentStatus,
@@ -28,6 +29,22 @@ export async function approveIncident({
     await postIncidentUpdate(incident.id, interpretation.summary);
     await updateIncidentStatus(incident.id, interpretation.status);
 
+    const resultLines = [
+      "\u2705 *Incident Approved & Created*",
+      `*Title:* ${interpretation.incident_title}`,
+      `*Status:* ${interpretation.status}`,
+      `*Summary:* ${interpretation.summary}`,
+    ];
+
+    if (
+      interpretation.affected_chains &&
+      interpretation.affected_chains.length > 0
+    ) {
+      resultLines.push(
+        `*Affected Chains:* ${interpretation.affected_chains.join(", ")}`,
+      );
+    }
+
     if (process.env.BETTERSTACK_STATUS_PAGE_ID) {
       const { report, created } = await findOrCreateStatusReport(
         interpretation.incident_title,
@@ -42,16 +59,17 @@ export async function approveIncident({
           interpretation.status,
         );
       }
+
+      const statusPageUrl = await getStatusPageUrl();
+      if (statusPageUrl) {
+        resultLines.push("");
+        resultLines.push(`\ud83d\udd17 <${statusPageUrl}|View Status Page>`);
+      }
     }
 
     await respond({
       replace_original: true,
-      text: [
-        "\u2705 *Incident Approved & Created*",
-        `*Title:* ${interpretation.incident_title}`,
-        `*Status:* ${interpretation.status}`,
-        `*Summary:* ${interpretation.summary}`,
-      ].join("\n"),
+      text: resultLines.join("\n"),
     });
   } catch (error) {
     const axiosError = error as AxiosError;

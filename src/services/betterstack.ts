@@ -259,6 +259,29 @@ export async function postStatusPageUpdate(
   console.log(`[BetterStack] Posted status update on report ${reportId}`);
 }
 
+/**
+ * Fetches the public URL of the configured status page.
+ * Returns null if no status page is configured or URL cannot be retrieved.
+ */
+export async function getStatusPageUrl(): Promise<string | null> {
+  const statusPageId = process.env.BETTERSTACK_STATUS_PAGE_ID;
+  if (!statusPageId) return null;
+
+  try {
+    const client = createClient(BASE_URL_V2);
+    const response = await client.get(`/status-pages/${statusPageId}`);
+    const attrs = response.data?.data?.attributes;
+    const subdomain = attrs?.subdomain as string | undefined;
+    const customDomain = attrs?.custom_domain as string | undefined;
+    if (customDomain) return `https://${customDomain}`;
+    if (subdomain) return `https://${subdomain}.betteruptime.com`;
+    return null;
+  } catch (error) {
+    console.error("[BetterStack] Failed to fetch status page URL:", error);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

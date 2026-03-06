@@ -102,6 +102,85 @@ function isIncidentInterpretation(
   );
 }
 
+const SUMMARIZE_PROMPT = `You are an incident-management assistant. Summarize the following Slack thread about a service incident.
+
+Rules:
+- Respond ONLY with a single JSON object. No markdown, no code fences, no explanation, no extra text.
+- The JSON object must have exactly four keys: "title", "status", "timeline", and "affected_chains".
+- "title": a short, customer-friendly title (≤10 words).
+- "status": the current status — one of "investigating" or "resolved". Use the same inference rules: only "resolved" if explicitly confirmed.
+- "timeline": an array of 1-5 short bullet strings summarizing key events in chronological order. Each bullet should be one sentence, customer-safe.
+- "affected_chains": an array of blockchain/network names mentioned (e.g., ["Solana"]). Empty array if none.
+
+Content filtering — IMPORTANT:
+- All output must be safe for customers. No internal jargon, system names, PR references, or deploy details.
+- Focus on customer impact and symptoms, not root cause.`;
+
+export type ThreadSummary = {
+  title: string;
+  status: "investigating" | "resolved";
+  timeline: string[];
+  affected_chains: string[];
+};
+
+/**
+ * Produces a human-readable summary of an incident thread.
+ * Used by the "summarize" command — does NOT create an incident.
+ */
+export async function summarizeThread(
+  threadMessages: string[],
+): Promise<ThreadSummary> {
+  const content = threadMessages
+    .map((msg, i) => `[Message ${i + 1}] ${msg}`)
+    .join("\n\n");
+
+  const response = await client.messages.create({
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: 512,
+    system: SUMMARIZE_PROMPT,
+    messages: [{ role: "user", content }],
+  });
+
+  const contentBlock = response.content[0];
+  if (!contentBlock || contentBlock.type !== "text") {
+    throw new ClaudeParseError("Claude returned no text content", "");
+  }
+
+  const raw = contentBlock.text
+    .trim()
+    .replace(/^```(?:json)?\s*\n?/, "")
+    .replace(/\n?```\s*$/, "");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ClaudeParseError("Claude response is not valid JSON", raw);
+  }
+
+  if (!isThreadSummary(parsed)) {
+    throw new ClaudeParseError(
+      "Claude response does not match summary schema",
+      raw,
+    );
+  }
+
+  return parsed;
+}
+
+function isThreadSummary(value: unknown): value is ThreadSummary {
+  if (typeof value !== "object" || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.title === "string" &&
+    (obj.status === "investigating" || obj.status === "resolved") &&
+    Array.isArray(obj.timeline) &&
+    obj.timeline.every((t: unknown) => typeof t === "string") &&
+    Array.isArray(obj.affected_chains) &&
+    obj.affected_chains.every((c: unknown) => typeof c === "string")
+  );
+}
+
 export class ClaudeParseError extends Error {
   public readonly rawResponse: string;
 
