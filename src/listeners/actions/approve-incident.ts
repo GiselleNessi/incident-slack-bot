@@ -9,16 +9,30 @@ import {
   postStatusPageUpdate,
   updateIncidentStatus,
 } from "../../services/betterstack";
+import {
+  trackIncident,
+  resolveIncident,
+} from "../../services/incident-tracker";
 
 export async function approveIncident({
   ack,
   action,
+  body,
   respond,
 }: AllMiddlewareArgs & SlackActionMiddlewareArgs): Promise<void> {
   await ack();
 
   const value = "value" in action ? String(action.value) : "{}";
   const interpretation: IncidentInterpretation = JSON.parse(value);
+
+  // Extract channel and thread from the action's message context
+  const channel =
+    "channel" in body && body.channel ? (body.channel as { id: string }).id : "";
+  const messageTs =
+    "message" in body && body.message
+      ? (body.message as { thread_ts?: string; ts: string }).thread_ts ??
+        (body.message as { ts: string }).ts
+      : "";
 
   try {
     const incident = await findOrCreateIncident(
@@ -28,6 +42,19 @@ export async function approveIncident({
 
     await postIncidentUpdate(incident.id, interpretation.summary);
     await updateIncidentStatus(incident.id, interpretation.status);
+
+    // Track for auto-reminders (only if not resolved)
+    if (interpretation.status !== "resolved" && channel && messageTs) {
+      trackIncident({
+        channel,
+        threadTs: messageTs,
+        title: interpretation.incident_title,
+        betterStackIncidentId: incident.id,
+        startedAt: Date.now(),
+      });
+    } else if (interpretation.status === "resolved" && channel && messageTs) {
+      resolveIncident(channel, messageTs);
+    }
 
     const resultLines = [
       "\u2705 *Incident Approved & Created*",
@@ -65,6 +92,13 @@ export async function approveIncident({
         resultLines.push("");
         resultLines.push(`\ud83d\udd17 <${statusPageUrl}|View Status Page>`);
       }
+    }
+
+    if (interpretation.status !== "resolved" && channel && messageTs) {
+      resultLines.push("");
+      resultLines.push(
+        "_\u23f0 Auto-reminders enabled — I\u2019ll check this thread every 15 minutes for updates._",
+      );
     }
 
     await respond({

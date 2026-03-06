@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { App, ExpressReceiver } from "@slack/bolt";
 import { registerListeners } from "./listeners";
+import { startAutoReminders } from "./services/auto-reminders";
 
 const requiredEnv = ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET"] as const;
 const missing = requiredEnv.filter((key) => !process.env[key]);
@@ -25,4 +26,7 @@ registerListeners(app);
   const port = Number(process.env.PORT) || 3000;
   await app.start(port);
   console.log(`⚡ Incident bot is running on port ${port}`);
+
+  // Start auto-reminder loop (checks active incidents every 15 min)
+  startAutoReminders(app.client);
 })();
