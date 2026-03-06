@@ -4,6 +4,7 @@ import {
   interpretIncidentMessage,
   summarizeThread,
 } from "../../services/claude";
+import { markPendingChains } from "../../services/pending-chains";
 import { fetchThreadMessages } from "../../utils/thread";
 
 type SayFn = AllMiddlewareArgs &
@@ -150,6 +151,8 @@ async function handleIncidentDraft(
   );
 
   if (!interpretation.chains_confident) {
+    markPendingChains(channel, threadTs);
+
     await say({
       thread_ts: threadTs,
       text: [
