@@ -4,19 +4,28 @@ export type IncidentInterpretation = {
   incident_title: string;
   status: "investigating" | "resolved";
   summary: string;
+  affected_chains: string[];
+  chains_confident: boolean;
 };
 
-const SYSTEM_PROMPT = `You are an incident-management assistant. Your job is to interpret a Slack message about a service incident and return structured, customer-facing data.
+const SYSTEM_PROMPT = `You are an incident-management assistant. Your job is to interpret Slack thread messages about a service incident and return structured, customer-facing data.
+
+You will receive the FULL THREAD CONTEXT — multiple messages from team members discussing an incident. Analyze ALL messages to build a complete picture.
 
 Rules:
 - Respond ONLY with a single JSON object. No markdown, no code fences, no explanation, no extra text.
-- The JSON object must have exactly three keys: "incident_title", "status", and "summary".
+- The JSON object must have exactly five keys: "incident_title", "status", "summary", "affected_chains", and "chains_confident".
 - "incident_title": a short, customer-friendly title for the incident (≤10 words).
-- "status": must be one of "investigating" or "resolved".
-  - If the message contains words like "down", "broken", "having issues", "outage", "degraded", "failing", "errors", "unavailable", or similar → "investigating"
-  - If the message contains words like "fixed", "resolved", "restored", "recovered", "back up", "back online", or similar → "resolved"
+- "status": must be one of "investigating" or "resolved". Infer the CURRENT status from the full thread chronologically:
+  - Look at the LATEST messages for the most up-to-date status.
+  - "investigating" — the issue is still being looked into, a fix is being deployed, or there is no confirmation of resolution.
+  - "resolved" — the issue has been explicitly confirmed as fixed, restored, recovered, or back to normal.
+  - Phrases like "deploying a fix", "hotfix going out", "pushing a patch" still mean "investigating" — the fix is not yet confirmed.
+  - Only use "resolved" when there is clear confirmation the issue is over (e.g., "confirmed fixed", "all clear", "back to normal", "resolved").
   - If unclear, default to "investigating".
-- "summary": a clean one-sentence summary suitable for a public-facing incident timeline.
+- "summary": a clean one-sentence summary suitable for a public-facing incident timeline. Reflect the latest known state from the thread.
+- "affected_chains": an array of blockchain/network names affected (e.g., ["Solana", "Ethereum"]). Extract these from the thread context. Use proper capitalized names. If no specific chains are mentioned, return an empty array [].
+- "chains_confident": true if specific chains were clearly mentioned in the thread; false if you had to guess or no chains were mentioned.
 
 Content filtering — IMPORTANT:
 - All output must be safe for customers to read. Write as if publishing to a public status page.
@@ -28,14 +37,27 @@ Content filtering — IMPORTANT:
 
 const client = new Anthropic();
 
+/**
+ * Interprets incident context from one or more thread messages.
+ * Pass the full thread (oldest-first) for best results.
+ * Falls back to a single message if no thread is available.
+ */
 export async function interpretIncidentMessage(
   text: string,
+  threadMessages?: string[],
 ): Promise<IncidentInterpretation> {
+  const content =
+    threadMessages && threadMessages.length > 0
+      ? threadMessages
+          .map((msg, i) => `[Message ${i + 1}] ${msg}`)
+          .join("\n\n")
+      : text;
+
   const response = await client.messages.create({
     model: "claude-sonnet-4-5-20250929",
-    max_tokens: 256,
+    max_tokens: 512,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: text }],
+    messages: [{ role: "user", content }],
   });
 
   const contentBlock = response.content[0];
@@ -73,7 +95,10 @@ function isIncidentInterpretation(
   return (
     typeof obj.incident_title === "string" &&
     (obj.status === "investigating" || obj.status === "resolved") &&
-    typeof obj.summary === "string"
+    typeof obj.summary === "string" &&
+    Array.isArray(obj.affected_chains) &&
+    obj.affected_chains.every((c: unknown) => typeof c === "string") &&
+    typeof obj.chains_confident === "boolean"
   );
 }
 
