@@ -42,8 +42,9 @@ All commands work by mentioning the bot in Slack:
 4. **Approve or Deny** — Click the button
    - **Approve** → Creates incident in Better Stack, posts to status page (if configured), creates Pylon issue (if configured), enables auto-reminders
    - **Deny** → Dismisses the draft
-5. **Auto-reminders** — Every 15 min, the bot checks active incident threads and suggests updates with Approve/Dismiss buttons
-6. **Resolve** — When thread activity indicates resolution, the bot suggests marking it resolved
+5. **Chain follow-up** — If the bot can't confidently detect affected chains, it asks the team to reply with the chain info. Just reply in the same thread (e.g. "chain id is base") — no need to @mention the bot again. The bot automatically picks up the reply, re-reads the thread, and posts an updated draft with chains filled in. To avoid excessive processing, it checks at most once every 10 minutes.
+6. **Auto-reminders** — Every 15 min, the bot checks active incident threads and suggests updates with Approve/Dismiss buttons
+7. **Resolve** — When thread activity indicates resolution, the bot suggests marking it resolved
 
 ---
 
@@ -67,6 +68,7 @@ All commands work by mentioning the bot in Slack:
 | **Update** | In an active thread, mention `@bot update` | Update draft with Approve/Deny |
 | **Chain detection** | Mention specific chains (e.g. "Polygon", "Arbitrum") in thread, then `@bot` | Chains listed in draft |
 | **Low confidence chains** | Vague message with no chain names, then `@bot` | Warning asking to specify chains |
+| **Chain follow-up** | Trigger low-confidence warning, then reply in thread with "affected chain is Solana" (no @mention) | Bot auto-detects reply, posts updated draft with chains filled in |
 | **Auto-reminders** | Approve an incident, wait 15 min (or temporarily lower `REMINDER_INTERVAL_MS`) | Bot posts suggested update in thread |
 | **Resolve flow** | In thread, post "issue is resolved", then `@bot update` | Status shows "resolved" |
 
