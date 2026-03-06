@@ -2,6 +2,7 @@ import type { AllMiddlewareArgs, SlackEventMiddlewareArgs } from "@slack/bolt";
 import { interpretIncidentMessage } from "../../services/claude";
 import {
   isPendingChains,
+  isCooldownReady,
   clearPendingChains,
 } from "../../services/pending-chains";
 import { fetchThreadMessages } from "../../utils/thread";
@@ -28,6 +29,7 @@ export async function threadMessage({
   const threadTs = event.thread_ts;
 
   if (!isPendingChains(channel, threadTs)) return;
+  if (!isCooldownReady(channel, threadTs)) return;
 
   try {
     const threadMessages = await fetchThreadMessages(client, channel, threadTs);
