@@ -28,11 +28,14 @@ incident-slack-bot/
 │   │   ├── events/
 │   │   │   ├── index.ts               # Registers event listeners on the app
 │   │   │   └── app-mention.ts         # Responds to @mentions
-│   │   ├── actions/                    # Interactive component handlers (empty, for future use)
+│   │   ├── actions/                    # Interactive component handlers (approve/deny/reminders)
 │   │   └── shortcuts/                  # Shortcut handlers (empty, for future use)
 │   ├── services/
 │   │   ├── claude.ts                  # Claude API — interprets incident messages
-│   │   └── betterstack.ts            # Better Stack API — incident CRUD + comments
+│   │   ├── betterstack.ts            # Better Stack API — incident CRUD + comments
+│   │   ├── pylon.ts                  # Pylon API — customer issue tracking
+│   │   ├── incident-tracker.ts       # In-memory active incident tracker
+│   │   └── auto-reminders.ts         # 15-min auto-reminder loop for active incidents
 │   ├── models/                         # Data models (empty, for future use)
 │   ├── utils/                          # Shared utilities (empty, for future use)
 │   └── types/                          # TypeScript type definitions (empty, for future use)
@@ -85,6 +88,7 @@ Defined in `.env` (see `.env.example`):
 | `BETTERSTACK_API_KEY`  | Better Stack Uptime API token        |
 | `BETTERSTACK_REQUESTER_EMAIL` | Email for incident creation (required by API) |
 | `BETTERSTACK_STATUS_PAGE_ID` | Status page ID for public reports |
+| `PYLON_API_TOKEN`      | Pylon API token (optional — enables customer issue tracking) |
 | `PORT`                 | Server port (default: `3000`)        |
 
 ## Architecture
@@ -136,6 +140,29 @@ Manages incidents in Better Stack Uptime via REST API:
 - `postStatusPageUpdate(reportId, message, status)` — posts a follow-up update on an existing report
 
 Uses v3 API for incident CRUD and v2 API for comments + status page reports. Auth via `BETTERSTACK_API_KEY` Bearer token. Status page integration is optional — only active when `BETTERSTACK_STATUS_PAGE_ID` is set.
+
+#### Pylon Service (`src/services/pylon.ts`)
+
+Manages customer-facing issues in Pylon via REST API (`https://api.usepylon.com`):
+
+- `createPylonIssue(title, summary, affectedChains)` — creates an internal Pylon issue tagged with "incident"
+- `updatePylonIssue(issueId, status)` — updates issue state (investigating → waiting_on_you, resolved → closed)
+- `isPylonConfigured()` — returns true if `PYLON_API_TOKEN` is set
+
+Integration is optional — only active when `PYLON_API_TOKEN` is set. Issues are created on incident approval and updated on reminder approval.
+
+#### Incident Tracker (`src/services/incident-tracker.ts`)
+
+In-memory store of active (unresolved) incidents. Used by the auto-reminder system to know which threads to check:
+
+- `trackIncident(incident)` — adds an incident to the tracker
+- `resolveIncident(channel, threadTs)` — removes an incident from the tracker
+- `getActiveIncidents()` — returns all tracked incidents
+- `updateIncidentPylonId(channel, threadTs, pylonIssueId)` — stores the Pylon issue ID for an incident
+
+#### Auto-Reminders (`src/services/auto-reminders.ts`)
+
+Timer-based loop (15-min interval) that checks each active incident's thread for new activity. For each incident, it fetches thread messages, generates a suggested update via Claude, and posts it with Approve/Dismiss buttons. Started on app boot via `startAutoReminders(client)`.
 
 ## Coding Conventions
 

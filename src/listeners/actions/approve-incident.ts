@@ -12,7 +12,12 @@ import {
 import {
   trackIncident,
   resolveIncident,
+  updateIncidentPylonId,
 } from "../../services/incident-tracker";
+import {
+  createPylonIssue,
+  isPylonConfigured,
+} from "../../services/pylon";
 
 export async function approveIncident({
   ack,
@@ -91,6 +96,30 @@ export async function approveIncident({
       if (statusPageUrl) {
         resultLines.push("");
         resultLines.push(`\ud83d\udd17 <${statusPageUrl}|View Status Page>`);
+      }
+    }
+
+    // Create a Pylon issue for customer tracking (optional)
+    if (isPylonConfigured()) {
+      try {
+        const pylonIssue = await createPylonIssue(
+          interpretation.incident_title,
+          interpretation.summary,
+          interpretation.affected_chains ?? [],
+        );
+        if (channel && messageTs) {
+          updateIncidentPylonId(channel, messageTs, pylonIssue.id);
+        }
+        resultLines.push("");
+        resultLines.push(
+          `\ud83d\udce8 Pylon issue created (${pylonIssue.id})`,
+        );
+      } catch (pylonError) {
+        console.error("[approve-incident] Pylon error:", pylonError);
+        resultLines.push("");
+        resultLines.push(
+          "\u26a0\ufe0f Pylon issue creation failed — incident still tracked in Better Stack",
+        );
       }
     }
 

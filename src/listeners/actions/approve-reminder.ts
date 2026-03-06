@@ -8,6 +8,10 @@ import {
   updateIncidentStatus,
 } from "../../services/betterstack";
 import { resolveIncident } from "../../services/incident-tracker";
+import {
+  isPylonConfigured,
+  updatePylonIssue,
+} from "../../services/pylon";
 
 type ReminderPayload = {
   incident_title: string;
@@ -17,6 +21,7 @@ type ReminderPayload = {
   channel: string;
   threadTs: string;
   betterStackIncidentId: string;
+  pylonIssueId?: string;
 };
 
 export async function approveReminder({
@@ -61,6 +66,19 @@ export async function approveReminder({
       if (statusPageUrl) {
         resultLines.push("");
         resultLines.push(`\ud83d\udd17 <${statusPageUrl}|View Status Page>`);
+      }
+    }
+
+    // Update Pylon issue status if configured
+    if (isPylonConfigured() && payload.pylonIssueId) {
+      try {
+        await updatePylonIssue(payload.pylonIssueId, payload.status);
+        resultLines.push("");
+        resultLines.push(
+          `\ud83d\udce8 Pylon issue updated (${payload.pylonIssueId})`,
+        );
+      } catch (pylonError) {
+        console.error("[approve-reminder] Pylon error:", pylonError);
       }
     }
 

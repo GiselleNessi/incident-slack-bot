@@ -8,6 +8,7 @@ export type ActiveIncident = {
   threadTs: string;
   title: string;
   betterStackIncidentId: string;
+  pylonIssueId?: string;
   startedAt: number;
 };
 
@@ -40,6 +41,24 @@ export function getActiveIncidents(): ActiveIncident[] {
   return Array.from(activeIncidents.values());
 }
 
+export function getIncident(
+  channel: string,
+  threadTs: string,
+): ActiveIncident | undefined {
+  return activeIncidents.get(key(channel, threadTs));
+}
+
 export function isTracked(channel: string, threadTs: string): boolean {
   return activeIncidents.has(key(channel, threadTs));
+}
+
+export function updateIncidentPylonId(
+  channel: string,
+  threadTs: string,
+  pylonIssueId: string,
+): void {
+  const incident = activeIncidents.get(key(channel, threadTs));
+  if (incident) {
+    incident.pylonIssueId = pylonIssueId;
+  }
 }

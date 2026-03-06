@@ -102,6 +102,7 @@ async function checkActiveIncidents(client: WebClient): Promise<void> {
                     channel: incident.channel,
                     threadTs: incident.threadTs,
                     betterStackIncidentId: incident.betterStackIncidentId,
+                    pylonIssueId: incident.pylonIssueId,
                   }),
                 },
                 {
@@ -156,6 +157,7 @@ async function checkActiveIncidents(client: WebClient): Promise<void> {
                     channel: incident.channel,
                     threadTs: incident.threadTs,
                     betterStackIncidentId: incident.betterStackIncidentId,
+                    pylonIssueId: incident.pylonIssueId,
                   }),
                 },
                 {
